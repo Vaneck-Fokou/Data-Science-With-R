@@ -1,0 +1,251 @@
+---
+title: "lab Classification"
+author: "lotfi"
+date: "22/12/2020"
+output: html_document
+---
+
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+library(tidyverse)
+library(tidymodels)
+library(rpart)
+library(vip)
+library("rpart.plot")
+
+```
+
+
+## Chargement des donnees  
+```{r}
+data("credit_data")
+credit_data
+```
+
+## Data spliting (Train/test) avec  rsample::initial_split
+```{r}
+set.seed(28676)
+
+# The set. seed() function sets the starting number used to generate a sequence of random numbers ??? it ensures that you get the same result if you start with that same seed each time you run the same process. For example, if I use the sample() function immediately after setting a seed, I will always get the same sample.
+
+credit_data_split <- initial_split(credit_data, prop=.8, strata='Status')
+credit_train <- training(credit_data_split)
+credit_test <- testing(credit_data_split)
+
+```
+
+## Arbre de decison  pour predire  si une personne remboursera un pret bancaire.
+Creez votre  arbre de decision (utiliser les donnees d'entrainement) 
+```{r}
+model_decision_tree <- rpart( formula = Status  ~ . , 
+                              data = credit_data, 
+                              method = "class"
+                            )
+```
+
+## Afficher les regles generées par l'arbre  de decison
+
+```{r}
+rpart.rules(model_decision_tree)
+```
+
+## Visualiser l'arbre  de decison
+```{r}
+rpart.plot(model_decision_tree, extra = 0  )
+```
+
+
+
+## Evaluez votre modele de classification (donnees de test)
+
+Commencez par faire la prediction de la classe de sortie 
+```{r}
+
+pred_dt <- model_decision_tree %>%                 
+              predict(credit_test, type = "class")     #predire la classe sur le testing set         
+credit_test <- credit_test %>%  mutate(pred_dt = pred_dt)
+
+```
+
+```{r}
+#Affichage des prédictions
+credit_test %>% select(Status, pred_dt)
+```
+
+
+## Evaluez votre modele de classification (donnees de test) 
+Metriques bases sur la prediction de type classe
+Utiliser yardstick  pour generer les mesures de parfomances bases sur la matrice de confusion
+```{r}
+#ces mesures requierent la cible reelle Status et la classe predite par le modele
+yardstick::conf_mat(credit_test,Status,pred_dt)   #matrice de confusion 
+yardstick::accuracy(credit_test, Status, pred_dt)   #accuracy
+yardstick::recall(credit_test, Status, pred_dt)     #recall 
+yardstick::precision(credit_test, Status, pred_dt)  #precision
+yardstick::f_meas(credit_test, Status, pred_dt)     #f mesure
+```
+
+## Evaluer le modele de classification
+Metriques bases sur la prediction de type  prob
+Ensuite, generer une prediction de type prob pour calculer l'AUC 
+```{r}
+pred_dt_probs <- model_decision_tree %>%
+                    predict(,type = "prob")
+
+# `pred_dt_probs` est une matrice 
+class(pred_dt_probs)
+# examiner les premieres lignes de cette matrice
+head(pred_dt_probs)
+
+#recuperer la probabilite de la class Yes
+
+prob_bad <- pred_dt_probs %>%  as_tibble() %>% pull(bad) 
+
+credit_test <- credit_test %>% 
+                    mutate(prob_yes = prob_bad)
+
+yardstick::roc_auc(,,prob_yes)
+
+```
+
+
+## Arbre de decison(avec parnsnip tidymodels ) 
+Entrainement 
+```{r}
+model_decision_tree_2 <- decision_tree(mode = "classification") %>%
+                              set_engine("rpart") %>%
+                            fit(Status ~ ., data = credit_data)
+```
+
+## Evaluation
+Predire la classe en utilisant predict  
+```{r}
+model_decision_tree_2 %>% 
+    predict(new_data = credit_test) %>%       #  cree automatiquement une colonne .pred_class 
+    bind_cols(credit_test ) %>%
+    yardstick::accuracy(truth = Status, estimate = .pred_class)
+   
+```
+
+## Evaluation
+predire les  probs sous forme de tibble (tidy format) 
+```{r}
+# predict avec type = "prob" pour creer  une tibble (colonnes : .pred_no  .pred_yes) 
+model_decision_tree_2_pred_probs <- model_decision_tree_2 %>%
+              predict(new_data = credit_test,type = "prob") %>%    
+              bind_cols( credit_test %>% select(Status) ) 
+glimpse(model_decision_tree_2_pred_probs)
+    
+yardstick::roc_auc(,truth = , .pred_bad)
+
+```
+## Random forest (avec parnsnip  ) 
+Creation du model (Entrainement)
+```{r}
+model_random_forest <- (mode='classification') %>% 
+                      set_engine('ranger') %>%
+                      fit(Status ~ ., data =  )
+```
+
+## Evaluation de Random forest
+Predire la classe en utilisant predict  
+
+```{r}
+
+```
+
+
+## Evaluation de Random forest
+predire les  probs sous forme de tibble (tidy format) 
+
+```{r}
+
+```
+
+
+
+## Boosted tree (avec parnsnip et XGBOOST ) Creation du model
+
+```{r}
+  ?boost_tree
+  ?xgboost::xgboost
+  set.seed(1234)
+  model_boost_tree <- boost_tree(
+                        mode = "classification") %>%
+                        set_engine("xgboost") %>%
+                        fit(, data =  )
+  
+```
+
+
+```{r}
+xgboost::xgb.importance(model = model_boost_tree$fit) %>%
+    as_tibble() %>% arrange(desc(Gain))
+```
+
+```{r}
+vip(model_boost_tree$fit)
+```
+
+
+## Evaluation de xgboost sur le testing set 
+```{r}
+#classe 
+model_boost_tree %>%
+    predict(new_data = credit_test) %>%
+    bind_cols(credit_test %>% select(Status)) %>%
+    yardstick::accuracy(truth = Status, estimate = .pred_class)
+
+#probs
+  model_boost_tree_pred_probs <- model_boost_tree %>%
+    predict(new_data = credit_test,type = "prob") %>% 
+    bind_cols( credit_test %>% select(Status) ) 
+  glimpse(model_boost_tree_pred_probs)
+  yardstick::roc_auc(model_boost_tree_pred_probs,truth = Status, .pred_bad)
+  
+```
+
+## comparaison des deux modeles C  l'aide de la courbe ROC
+preparation des donnees pour tracer la courbe C  l'aide de roc_curve
+```{r}
+#Donnees pour le modele base sur l'arbre de decision
+decision_tree_2_roc_curve <- roc_curve(
+                                model_decision_tree_2_pred_probs,
+                                truth = Status, 
+                                Class1 = .pred_bad)  
+glimpse(decision_tree_2_roc_curve)
+
+#Donnees pour le modele base sur le xgboost
+boost_tree_roc_curve <-  roc_curve(model_boost_tree_pred_probs,
+                                   Status, 
+                                   .pred_bad)  # the event of interest
+
+glimpse(boost_tree_roc_curve)
+
+```
+
+## comparaison des deux modeles C  l'aide de la courbe ROC
+Combinaison des deux data frame
+```{r}
+ 
+# vous vous souvenez de  bind_rows ? 
+ roc_curve_data <- bind_rows( 
+                          decision_tree =  decision_tree_2_roc_curve,
+                          boost_tree= boost_tree_roc_curve ,
+                          .id = "modele"
+                          )
+```
+
+## comparaison des deux modeles C  l'aide de la courbe ROC
+Generation de la courbe C  l'aide de ggplot2
+```{r}
+roc_curve_data %>% 
+    ggplot(aes(x = 1- specificity, y = sensitivity, color = modele))+
+    geom_line(size = 1)+
+    geom_abline(linetype = 'dashed')+
+    labs(title = 'Comparaison des courbes ROC',
+         x = 'FPR (1 -specificity)',
+         y = 'TPR (sensitivity) ')
+```

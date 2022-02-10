@@ -1,0 +1,192 @@
+---
+title: "Spark streaming"
+author: "lotfi"
+date: "09/03/2021"
+output: html_document
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(future)
+library(sparklyr)
+library(tidyverse)
+```
+
+
+ 
+## Example 1 - Input/Output
+1.Open the Spark connection
+
+```{r }
+sc <- spark_connect(master = "local")
+```
+
+2.Optional step. This resets the input and output folders. It makes it easier to run the code multiple times in a clean manner.
+```{r}
+if(file.exists("source")) unlink("source", TRUE)
+if(file.exists("destination")) unlink("destination", TRUE)
+```
+
+## Example 1 - Input/Output
+3.Produces a single test file inside the “source” folder. This allows the “read” function to infer CSV file definition.
+
+```{r}
+stream_generate_test(iterations = 1 , path = "source")
+list.files("source")
+```
+
+4.Points the stream reader to the folder where the streaming files will be placed. Since it is primed with a single CSV file, it will use as the expected layout of subsequent files. By default, stream_read_csv() creates a single integer variable data frame.
+
+```{r}
+read_folder <- stream_read_csv(sc  ,  "source" )
+
+```
+
+
+## Example 1 - Input/Output
+5.The output writer is what starts the streaming job. It will start monitoring the input folder, and then write the new results in the “destination” folder. So as new records stream in, new files will be created in the “destination” folder. Since there are no operations on the incoming data at this time, the output files will have the same exact raw data as the input files. The only difference is that the files and sub folders within “destination” will be structured how Spark structures data folders.
+
+```{r}
+write_output <- stream_write_csv( read_folder , "destination")
+list.files(  )
+```
+
+## Example 1 - Input/Output
+6.The test generation function will run 100 files every 0.2 seconds. To run the tests “out-of-sync” with the current R session, the future package is used.
+
+```{r}
+invisible(future(stream_generate_test(interval = 0.2, iterations = 100)))
+```
+
+## Example 1 - Input/Output
+7.The stream_view() function can be used before the 50 tests are complete because of the use of the future package. It will monitor the status of the job that write_output is pointing to and provide information on the amount of data coming into the “source” folder and going out into the “destination” folder.
+```{r}
+stream_view(write_output)
+```
+
+
+## Example 1 - Input/Output
+
+8.The monitor will continue to run even after the tests are complete. To end the experiment, stop the Shiny app and then use the following to stop the stream and close the Spark session.
+
+```{r}
+
+stream_stop(write_output)
+```
+
+
+
+## Example 2 - Processing
+The second example builds on the first. It adds a processing step that manipulates the input data before saving it to the output folder. In this case, a new binary field is added indicating if the value from x is over 400 or not. This time, while run the second code chunk in this example a few times during the stream tests to see the aggregated values change.
+
+
+
+## Example 2 - Processing
+
+1.The processing starts with the read_folder variable that contains the input stream. It coerces the integer field x, into a type double. This is because the next function, ft_binarizer() does not accept integers. The binarizer determines if x is over 400 or not. This is a good illustration of how dplyr can help simplify the manipulation needed during the processing stage.
+
+```{r}
+#if(file.exists("source")) unlink("source", TRUE)
+#if(file.exists("destination")) unlink("destination", TRUE)
+
+process_stream <- read_folder %>%
+  mutate(x = as.double(x)) %>%
+      ft_binarizer(
+    input_col = "x", 
+    output_col = "over", 
+    threshold = 400
+  )
+```
+
+## Example 2 - Processing
+
+2.The output now needs to write-out the processed data instead of the raw input data. Swap read_folder with process_stream.
+```{r}
+write_output <- stream_write_csv( process_stream  , "destination")
+```
+
+
+```{r}
+invisible(future(stream_generate_test(interval = 0.2, iterations = 100)))
+```
+
+
+## Example 2 - Processing
+
+3.The “destination” folder can be treated as a if it was a single table within Spark. Using spark_read_csv(), the data can be mapped, but not brought into memory (memory = FALSE). This allows the current results to be further analyzed using regular dplyr commands.
+
+```{r}
+spark_read_csv(sc, "stream", "destination", memory = FALSE) %>%
+  group_by(over) %>%
+  tally()
+```
+
+
+
+## Example 3 - Aggregate in process and output to memory
+Another option is to save the results of the processing into a in-memory Spark table. Unless intentionally saving it to disk, the table and its data will only exist while the Spark session is active.
+
+
+## Example 3 - Aggregate in process and output to memory
+
+Using example 2 as the base, this example code will perform some aggregations to the current stream input and save only those summarized results into Spark memory:
+
+
+## Example 3 - Aggregate in process and output to memory
+
+1.The stream_watermark() functions add a new timestamp variable that is then used in the group_by() command. This is required by Spark Stream to accept summarized results as output of the stream. The second step is to simply decide what kinds of aggregations we need to perform. In this case, a simply max, min and count are performed.
+
+```{r }
+#if(file.exists("source")) unlink("source", TRUE)
+
+stream_generate_test(iterations = 1)
+read_folder <- stream_read_csv(sc, "source") 
+
+process_stream <- read_folder %>%
+  stream_watermark() %>%
+  group_by(timestamp) %>%
+  summarise(
+    max_x = max( x  , na.rm = TRUE),
+    min_x = min( x , na.rm = TRUE),
+    count = n()
+  )
+```
+
+
+## Example 3 - Aggregate in process and output to memory
+
+2.The spark_write_memory() function is used to write the output to Spark memory. The results will appear as a table of the Spark session with the name assigned in the name argument, in this case the name selected is: “stream”.
+
+```{r}
+write_output <- stream_write_memory( process_stream , name = "stream")
+
+```
+
+## Example 3 - Aggregate in process and output to memory
+
+3.To query the current data in the “stream” table can be queried by using the dplyr tbl() command.
+
+```{r}
+tbl(sc ,  "stream"  ) 
+```
+
+
+Clean up after the experiment
+
+```{r}
+stream_stop(write_output)
+
+```
+
+```{r}
+spark_disconnect(sc)
+
+```
+
+
+
+
+
+
+

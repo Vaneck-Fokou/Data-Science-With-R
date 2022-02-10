@@ -1,0 +1,410 @@
+---
+title: "lab Data wrangling avec dplyr"
+author: "lotfi"
+date: "01/12/2020"
+output: pdf_document
+---
+
+
+Data wrangling, sometimes referred to as data munging, is the process of transforming and mapping data from one "raw" data form into another format with the intent of making it more appropriate and valuable for a variety of downstream purposes such as analytics. A data wrangler is a person who performs these transformation operations.  Wikipedia
+
+
+
+## Contenu 
+Dans cet  atelier, nous allons etendre cet exemple et nous introduisons une serie de fonctions du package `dplyr` pour la manipulation et la transformation des donnees pour repondre aux differents besoins d'analyse et de modelisations. 
+
+
+##  packages  requis
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(nycflights13)
+```
+
+
+
+## Votre tour Filter
+
+Essayer de filtrer le jeu de donnees `flights` pour avoir un jeu de donnees reduit `alaska_flights` contenant juste les vols pour la compagnie **Alaska Airlines** cad  `carrier == "AS"` a  l'aide de la fonction ou verbe adequat . 
+
+```{r }
+alaska_flights <- flights %>% 
+  filter(carrier == "AS")
+alaska_flights
+```
+
+## Votre tour Filter
+
+Nous souhaitons avoir les  vols de New York City a destination de  Portland, Oregon ayant le code  "PDX" .
+completer et executez le Chunk suivant pour repondre a cette question.
+```{r}
+portland_flights <- flights %>%
+  filter(dest == "PDX")
+  
+portland_flights
+```
+
+Faite attention ?? l'operateur logique utilise  `== ` et non pas un seul signe egal `=`. 
+
+## Votre tour Filter
+Checher  les vols `flights` qui departent de "JFK" **et** qui sont a destination de Burlington, Vermont ("BTV") ou Seattle, Washington ("SEA") pendant les mois d'octobre, novembre ou decembre.
+
+```{r}
+btv_sea_flights_fall <- flights %>% 
+  filter(origin == "JFK" & (dest == "BTV"   |  dest == "SEA") & month >= 10)
+btv_sea_flights_fall
+```
+
+## Votre tour Filter
+Pour  eviter l'utilisation de l'operateur `&`, vous pouvez separer les conditions juste avec une virgule. 
+
+```{r}
+btv_sea_flights_fall <- flights %>% 
+  filter(origin == "JFK", (dest == "BTV" | dest == "SEA"), month >= 10)
+btv_sea_flights_fall
+```
+
+## Votre tour Filter
+Executez le Chunk suivant qui illustre l'utilisation de l'operateur `!` "not" pour selectionner les lignes correspondant aux vols qui ne sont pas a destination de  Burlington, VT or Seattle, WA.
+```{r}
+not_BTV_SEA <- flights %>% 
+  filter(!(dest == "BTV" | dest == "SEA"))
+not_BTV_SEA
+```
+
+
+## Votre tour Filter
+Utiliser l'operateur `%in%`  avec la fonction `c()` pour filtrer un nombre plus important d'aeroports, par exemple `"SEA"`, `"SFO"`, `"PDX"`, `"BTV"`, and `"BDL"`. 
+
+```{r}
+many_airports <- flights %>% 
+  filter(dest %in% c("SEA", "SFO", "PDX", "BTV", "BDL"))
+many_airports
+```
+
+
+Il est  recommander que le verbe  `filter()` soit  parmi les premiers verbes que vous envisagez d'appliquer a vos donnees. Cela d'optimiser votre data pipeline en reduisons la taille du data frame juste aux observations qu on va utiliser dans les traitements ulterieures. 
+
+
+
+## Votre tour `summarize` 
+
+Utiliser les fonctions `mean()` et `sd()` avec le verbe  `summarize()` du package `dplyr` , pour calculer dans un premier temps, la moyenne et l'ecart-type  de  la variable `temp` relative au dataset `weather`. 
+Enregistrer les resultats dans un nouveau data frame  appele `summary_temp` qui comporte  deux variables :  `mean_temp` et  `std_dev_temp`.
+
+
+```{r}
+summary_temp <- weather %>% 
+  summarize(mean_temp = mean(temp, na.rm = TRUE), 
+            std_dev_temp = sd(temp, na.rm = TRUE))
+summary_temp
+```
+# Another way 
+```{r} 
+sum_temp <- weather %>% select(temp) %>% drop_na() %>%
+  summarize(mean_temp = mean(temp), std_dev_temp = sd(temp))
+sum_temp
+```
+
+
+## Votre tour `group_by` 
+Calculer les meme statistiques , mais cette fois ci pour chacun des 12 mois separement au lieu de calculer la temperature moyenne pour l'annee toute entiere ?? l'aide du verbe `group_by`.
+
+```{r}
+summary_monthly_temp <- weather %>% 
+  group_by(month) %>% 
+  summarize(mean_temp = mean(temp, na.rm = TRUE), sd_dev_temp = sd(temp, na.rm = TRUE))
+summary_monthly_temp
+```
+
+
+## Votre tour `group_by` 
+Utiliser la fonction de comptage   `n()`pour  calculer  le nombre de vols au depart de chacun des trois aeroports de la ville de New York :
+```{r}
+by_origin <- flights %>% 
+  group_by(origin) %>% 
+  summarize(count = n())
+by_origin
+```
+On constate que l'aeroportt Newark (`"EWR"`) a enregistrer le nombre de vols le plus important en 2013, suivi de `"JFK"` et enfin LaGuardia (`"LGA"`). 
+
+
+## Votre tour `group_by` 
+
+Completer le code pour avoir le nombre de vols au depart de chacun des trois aeroports de New York City *pour chaque mois*. 
+```{r}
+by_origin_monthly <- flights %>% 
+  group_by(origin, month) %>% 
+  summarize(count = n())
+by_origin_monthly
+```
+
+## Votre tour `group_by` 
+
+Executer le chunk suivant et comparare le resultat avec l'exercice precident. Qu'est ce que vous remarquez ?
+```{r}
+by_origin_monthly_incorrect <- flights %>% 
+  group_by(origin) %>% 
+  group_by(month) %>% 
+  summarize(count = n())
+by_origin_monthly_incorrect
+```
+```{r}
+ungroup(by_origin_monthly)
+by_origin_monthly
+```
+
+
+## Votre tour   `mutate` 
+Dans certain cas, les pilotes peuvent rattraper un peu de temps pendant le vol meme si le vol enregistre un retard au depart.  
+C'est ce que l'on appelle dans le secteur du transport aerien, le _gain_ que nous allons essayer de calculer en utilisant la fonction `mutate()` :
+
+$$
+\text{gain} = {dep\_delay - arr\_delay }
+$$
+
+
+```{r}
+flights <- flights %>% 
+  mutate(gain = dep_delay - arr_delay) 
+flights
+```
+
+## Votre tour   `mutate` 
+Vous pouvez egalement  creer plusieurs nouvelles variables a  la fois dans le meme code `mutate()`.
+Essayer donc de creer deux autres variables :
+
+
+$$
+\text{hours} = \frac{\text{air_time}}{60}
+$$
+
+et
+
+$$
+\text{gain_per_hour} = \frac{\text{gain}}{hours}
+$$
+```{r}
+flights <- flights %>% 
+  mutate( hours = air_time / 60, 
+          gain_per_hour = gain / hours
+  )
+flights
+```
+
+
+
+## Votre tour   `arrange` 
+
+Pour determiner les aeroports de destination les plus frequents pour tous les vols interieurs au depart de New York en 2013, utiliser `arrange` pour faire le tri selon `num_flights`. 
+
+```{r}
+freq_dest <-  flights %>% 
+  group_by(dest) %>% 
+  summarize(num_flights = n())  %>% 
+  arrange(desc(num_flights))
+freq_dest
+```
+arrange avec ifelse()
+```{r}
+flights %>% mutate(MCO_Air = ifelse(dest == "MCO", "MCO_airport", "Autres")) %>%
+select(MCO_Air, dest)
+```
+# fonction de ranking 
+```{r}
+freq_dest %>% mutate(rank_1 = dense_rank(num_flights), rank_2 = min_rank(num_flights)) %>%
+  select(dest, num_flights, rank_1, rank_2)
+```
+
+
+
+
+## Votre tour   `arrange` 
+Fites  le tri selon l'ordre "descendant", ?? l'aide de la fonction `desc()`:
+
+```{r}
+freq_dest <-  flights %>% 
+  group_by(dest) %>% 
+  summarize(num_flights = n())  %>% 
+  arrange(desc(num_flights)) %>% 
+  slice(1:6)
+freq_dest
+```
+# Select
+```{r}
+select(flights, -year)
+```
+```{r}
+select(flights, month:air_time)
+```
+Vilualiser les données en permutant les colonnes
+```{r}
+select(flights, day, arr_time, air_time, everything())
+```
+Selectionner les colonnes qui commencent par "a"
+```{r}
+flights %>% select(starts_with("a"))
+```
+
+
+
+
+## Votre tour `join`  1 
+
+En utilisant la fonction `inner_join()`,completer le code suivant pour faire correspondre les  lignes des deux dataset `flights` and `airlines`.
+Rappelez vous que la variable cle par laquelle nous allons  joindre  les lignes des deux datasets   porte le meme nom  `carrier`.
+
+```{r eval=FALSE}
+flights_joined <- flights %>% 
+  inner_join(airlines, by = "carrier")
+flights_joined
+```
+Essayer de comparer `flights` et `flights_joined`.
+
+
+## Votre tour `join`2
+
+Supposons que nous nous interessons maintenant a la destination vols interieurs au depart de NYC en 2013 au lieu des campgnies aeriennnes. C-a-d que nous souhaitons connaitre les villes des aeroports de destination ?
+Le data set `airports` contient le code de chaque aeroport:
+```{r eval=FALSE}
+airports
+```
+
+Cependant, si nous examinons `airports` et `flights`, nous constatons que les codes des aeroports sont indiques dans des variables qui portent  des noms differents. 
+Dans  `airports` , le code d'aeroport est renseigne par la variable `faa`, tandis que dans les `flights` , les codes d'aeroport existe dans  `origin` and `dest`. 
+
+Essayer de joindre ces deux data set par code d'aeroport, en  modifiant  le syhntaxe de l'argument by , `by = c("dest" = "faa")`.
+
+```{r}
+flights_with_airport_names <-  flights %>% 
+  inner_join(airports , by = c("dest" = "faa"))
+flights_with_airport_names
+```
+# inner join
+```{r}
+airports_names <- flights %>% 
+  left_join(airports, by = c("dest" = "faa"))
+airports_names
+```
+
+
+
+## Votre tour `join`2
+Utiliser les verbes introduits lors de cet'atelier pour construire la chaine d'operateurs de pipe `%>%` qui calcule le nombre de vols de NYC a  chaque destination, mais qui inclut egalement des informations sur chaque aeroport de destination :
+
+
+```{r}
+named_dests <- flights %>%
+  group_by(dest) %>%
+  summarize(num_flights = n()) %>%
+  arrange(desc(num_flights)) %>%
+       left_join(airports, by = c("dest" = "faa"))
+named_dests
+```
+
+
+## Votre tour `join` 3 
+Dans certains cas de figure, une seule variables cles n'est pas suffisante et on a besoin plutot d'utiliser *deux ou plusieurs variables cles* afin de pouvoir joindre deux data set. Pour joindre `flights` and `weather`, nous avons besoin de plus d'une variable  : `year`, `month`, `day`, `hour` et `origin`.En effet, la combinaison de ces 5 variables permet d'identifier de maniere unique chaque unite d'observation dans la base de donnees `weather`  : les enregistrements meteorologiques horaires effectues  dans chacun des 3 aeroports de New York.
+
+Compltez et excecuez le code pour avoir le resultat attendu
+```{r}
+flights_weather_joined <- flights %>%
+  inner_join(weather, by = c("year", "month", "day", "hour" ,"origin"))
+flights_weather_joined
+```
+# semi_joint()
+```{r}
+df <- airports %>%
+  semi_join(flights, by = c("faa" = "dest"))
+df
+```
+# anti_join()
+```{r}
+df1 <- airports %>% 
+  anti_join(flights, by = c("faa" = "dest"))
+df1
+```
+
+
+
+
+
+## Votre tour `select` 
+
+Utilsez le verbe `select()` pour retourner le code de la campgnie aerienne , le numero de l'avion et le numero du vols :
+```{r}
+flights %>% 
+  select(, )
+```
+
+## Votre tour `select` 
+Selectionner toutes les variable sauf l'ann??es du moment que toutes les donn??es concerne l'ann??es 2013.Vous pouvez simplement ajouter le signe `-`  a  cote de `year` pour selectionner tous les autres variables.  
+```{r}
+flights_no_year <-  %>% (- )
+flights_no_year
+```
+
+
+## Votre tour `select` 
+
+Exceuter le code suivant pour extraire toutes les colonnes situees entre `month` et `arr_time`.
+```{r}
+flight_arr_times <- flights %>% ( : )
+flight_arr_times
+```
+
+
+## Votre tour `select` 
+Selectionner dans l'ordre les  variables `year`, `month` ,  `day` ,`hour`, `minute` et  `time_hour`  ainsi que le reste des variables ?? l'aide de la fonction `everything()`. 
+
+```{r}
+flights_reorder <-  %>% 
+  select(year, month, day, hour, )
+glimpse(flights_reorder)
+```
+
+
+## Votre tour `select` 
+Explorer les  possibilites offertes par les fonctions d'aide `starts_with()`, `ends_with()`, et `contains()` utilisees pour selectionner les variables qui correspondent a un pattern specifique.
+
+```{r}
+flights %>% select(starts_with("a"))
+```
+
+```{r}
+flights %>% select(ends_with("delay"))
+
+```
+
+```{r}
+flights %>% select(contains("time"))
+```
+
+
+
+## Votre tour  `top_n` 
+
+Utilisant la fonction `top_n()` , pour genenrer  une data frame des 10 principaux aeroports de destination en specifiant  le nombre de valeurs a retourner  `n = 10` et `wt = num_flights` pour indiquer que nous voulons avoir les lignes correspondant aux 10 premieres valeurs de `num_flights`. 
+
+Trier le resultats selon l'ordre decroissant  de `num_flights` a  l'aide de la fonction `arrange()`  :
+
+```{r}
+flights %>%
+  group_by(dest) %>%
+  summarize(num_flights = n()) %>%
+  inner_join(airports, by = c("dest" = "faa")) %>%
+  rename(airport_name = name) %>% 
+  select(airport_name,num_flights ) %>% 
+  top_n(n = , wt )
+  arrange(desc(num_flights))
+```
+
+
+
+
+
+
+
+
+
+
